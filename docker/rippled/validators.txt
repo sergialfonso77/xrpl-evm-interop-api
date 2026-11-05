@@ -1,0 +1,2 @@
+# Not used in stand-alone mode, but rippled expects the file to exist.
+[validators]

@@ -1,0 +1,20 @@
+# Local development networks (LR2: no real funds).
+# rippled runs in stand-alone mode: ledgers only close when ledger_accept is called.
+services:
+  rippled:
+    image: rippleci/rippled
+    # The image is only built for amd64; on Apple Silicon it runs under emulation.
+    platform: linux/amd64
+    command: ["--standalone", "--conf", "/etc/opt/ripple/rippled.cfg"]
+    volumes:
+      - ./docker/rippled:/etc/opt/ripple:ro
+    ports:
+      - "127.0.0.1:5005:5005"   # JSON-RPC (admin, local only)
+      - "127.0.0.1:6006:6006"   # WebSocket
+  anvil:
+    image: ghcr.io/foundry-rs/foundry
+    environment:
+      ANVIL_IP_ADDR: "0.0.0.0"
+    command: ["anvil"]
+    ports:
+      - "127.0.0.1:8545:8545"
