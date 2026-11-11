@@ -21,6 +21,8 @@ const schema = z.object({
   XRPL_SEED: z.string().min(1),
   // Second account of the API that receives the minimal payments used to carry memos.
   XRPL_ANCHOR_DESTINATION: z.string().min(1),
+  // true only for a local rippled in stand-alone mode (the adapter closes the ledgers itself).
+  XRPL_STANDALONE: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
 
   // EVM chain (local Anvil or XRPL EVM testnet).
   EVM_RPC_URL: z.string().url(),

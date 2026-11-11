@@ -19,7 +19,10 @@ export interface ChainAdapter {
   readonly name: ChainName;
   /** Stores a record and returns the reference of the final transaction (SR9). */
   store(id: string, payload: string): Promise<TxRef>;
-  /** Reads a record by its identifier, or returns null if it does not exist. */
-  get(id: string): Promise<{ payload: string; ref?: TxRef } | null>;
+  /**
+   * Reads a record by its identifier, or returns null if it does not exist.
+   * The reference of the transaction (from the local store) is optional.
+   */
+  get(id: string, ref?: TxRef): Promise<{ payload: string; ref?: TxRef } | null>;
   status(): Promise<ChainStatus>;
 }

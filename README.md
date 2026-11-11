@@ -4,7 +4,7 @@ Prototype of the UOC Master's thesis *Blockchain Network Interoperability: The C
 It offers a common REST interface to store, retrieve and verify data on the XRP Ledger and on an EVM chain (XRPL EVM),
 including a cross-chain operation that stores a record on the EVM chain and anchors its SHA-256 hash on the XRP Ledger.
 
-> Status: PAC3 in progress. T3.1 (environment set-up) done; adapters and routes are added in T3.2–T3.4.
+> Status: PAC3 in progress. T3.1 (environment set-up) and T3.2 (XRP Ledger adapter) done; the EVM adapter and the routes are added in T3.3–T3.4.
 
 ## Requirements
 
@@ -42,6 +42,16 @@ PRIVATE_KEY=<anvil key> forge script script/Deploy.s.sol --rpc-url http://127.0.
 ```
 
 Write the deployed address in `EVM_CONTRACT_ADDRESS`.
+
+XRP Ledger accounts (with the local node running and `XRPL_STANDALONE=true` in `.env`):
+
+```bash
+npm run xrpl:setup    # creates and funds the two accounts of the API; copy the output into .env
+npm run xrpl:smoke    # stores a record, reads it back with and without the local store
+```
+
+For the XRPL Testnet, set `XRPL_WS_URL=wss://s.altnet.rippletest.net:51233` and `XRPL_STANDALONE=false`;
+`xrpl:setup` then funds the accounts with the public faucet.
 
 Notes on the local networks:
 
