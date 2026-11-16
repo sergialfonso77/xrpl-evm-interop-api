@@ -28,7 +28,10 @@ const schema = z.object({
   EVM_RPC_URL: z.string().url(),
   EVM_PRIVATE_KEY: z.string().regex(/^0x[0-9a-fA-F]{64}$/, "must be a 0x-prefixed 32-byte hex key"),
   EVM_CHAIN_ID: z.coerce.number().int().positive(),
-  EVM_CONTRACT_ADDRESS: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+  // Address of the RecordStore contract of the API, written after it is deployed (empty until then).
+  EVM_CONTRACT_ADDRESS: z.preprocess((v) => (v === "" ? undefined : v), z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional()),
+  // Block in which the contract was deployed: searches without a transaction reference start there.
+  EVM_FROM_BLOCK: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().int().nonnegative().default(0)),
 
   // Local store (SQLite).
   DB_PATH: z.string().default("./data/api.sqlite"),

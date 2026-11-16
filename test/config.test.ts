@@ -18,6 +18,11 @@ describe("loadConfig", () => {
     expect(c.MAX_XRPL_PAYLOAD_BYTES).toBe(512);
     expect(c.MAX_EVM_PAYLOAD_BYTES).toBe(4096);
   });
+  it("treats an empty contract address as not deployed yet", () => {
+    const c = loadConfig({ ...valid, EVM_CONTRACT_ADDRESS: "", EVM_FROM_BLOCK: "" } as NodeJS.ProcessEnv);
+    expect(c.EVM_CONTRACT_ADDRESS).toBeUndefined();
+    expect(c.EVM_FROM_BLOCK).toBe(0);
+  });
   it("rejects a malformed private key", () => {
     expect(() => loadConfig({ ...valid, EVM_PRIVATE_KEY: "abc" } as NodeJS.ProcessEnv)).toThrow(/EVM_PRIVATE_KEY/);
   });

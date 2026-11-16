@@ -4,7 +4,7 @@ Prototype of the UOC Master's thesis *Blockchain Network Interoperability: The C
 It offers a common REST interface to store, retrieve and verify data on the XRP Ledger and on an EVM chain (XRPL EVM),
 including a cross-chain operation that stores a record on the EVM chain and anchors its SHA-256 hash on the XRP Ledger.
 
-> Status: PAC3 in progress. T3.1 (environment set-up) and T3.2 (XRP Ledger adapter) done; the EVM adapter and the routes are added in T3.3–T3.4.
+> Status: PAC3 in progress. T3.1 (environment set-up) and T3.2 (XRP Ledger adapter) done; T3.3 (EVM adapter) in testing; the routes are added in T3.4.
 
 ## Requirements
 
@@ -38,10 +38,19 @@ Contract (in `contracts/`):
 cd contracts
 forge install foundry-rs/forge-std --no-git
 forge test
-PRIVATE_KEY=<anvil key> forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
+PRIVATE_KEY=<key of the API account> forge script script/Deploy.s.sol --rpc-url <EVM_RPC_URL> --broadcast
 ```
 
-Write the deployed address in `EVM_CONTRACT_ADDRESS`.
+Write the deployed address in `EVM_CONTRACT_ADDRESS` and the block printed by the script in `EVM_FROM_BLOCK`.
+The account that deploys the contract becomes its writer, so it must be the account of `EVM_PRIVATE_KEY`.
+Then test the EVM adapter:
+
+```bash
+npm run evm:smoke     # stores a record in the contract, reads it back with and without the transaction reference
+```
+
+For the XRPL EVM Testnet use `EVM_RPC_URL=https://rpc.testnet.xrplevm.org/` and `EVM_CHAIN_ID=1449000`
+(test XRP from https://faucet.xrplevm.org).
 
 XRP Ledger accounts (with the local node running and `XRPL_STANDALONE=true` in `.env`):
 

@@ -9,3 +9,6 @@ contracts/out/
 contracts/cache/
 contracts/broadcast/
 contracts/lib/
+# Standard JSON input generated for the verification of the contract
+contracts/*.standard-input.json
+.DS_Store

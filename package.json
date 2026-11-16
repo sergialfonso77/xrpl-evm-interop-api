@@ -15,7 +15,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "xrpl:setup": "tsx scripts/xrpl-setup.ts",
-    "xrpl:smoke": "tsx scripts/xrpl-smoke.ts"
+    "xrpl:smoke": "tsx scripts/xrpl-smoke.ts",
+    "evm:smoke": "tsx scripts/evm-smoke.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",

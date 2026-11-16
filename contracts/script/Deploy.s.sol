@@ -11,5 +11,7 @@ contract Deploy is Script {
         RecordStore store = new RecordStore();
         vm.stopBroadcast();
         console.log("RecordStore deployed at", address(store));
+        // In a script, block.number is the last block before the deployment, so it is a safe lower bound.
+        console.log("Last block before the deployment (lower bound for EVM_FROM_BLOCK)", block.number);
     }
 }
