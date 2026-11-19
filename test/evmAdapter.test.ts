@@ -163,6 +163,24 @@ describe("EvmAdapter", () => {
     await expect(adapter.get("rec-1", { ...ref, contractAddress: OTHER_CONTRACT })).rejects.toBeInstanceOf(IntegrityError);
   });
 
+  it("sends the writes one after another, even if two requests arrive at the same time", async () => {
+    const chain = fakeChain();
+    chain.track("a");
+    chain.track("b");
+    let active = 0;
+    let maxActive = 0;
+    const realStore = chain.contract.store;
+    chain.contract.store = async (key, payload) => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      const tx = await realStore(key, payload);
+      return { hash: tx.hash, wait: async (c?: number) => { const r = await tx.wait(c); active--; return r; } };
+    };
+    const adapter = adapterWith(chain);
+    await Promise.all([adapter.store("a", "{}"), adapter.store("b", "{}")]);
+    expect(maxActive).toBe(1);
+  });
+
   it("reports the status and the balance of the API account", async () => {
     const status = await adapterWith(fakeChain()).status();
     expect(status).toEqual({ chain: "evm", connected: true, latest: 100, balance: "5.0" });

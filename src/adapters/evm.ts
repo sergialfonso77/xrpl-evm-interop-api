@@ -92,6 +92,8 @@ export class EvmAdapter implements ChainAdapter {
   private readonly contractAddress: string;
   private readonly address: string;
   private networkChecked = false;
+  /** Writes are sent one after another, so that two transactions never get the same nonce. */
+  private writeQueue: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly opts: EvmAdapterOptions,
@@ -103,7 +105,10 @@ export class EvmAdapter implements ChainAdapter {
       this.contract = deps.contract;
       this.address = getAddress(deps.address);
     } else {
-      const provider = new JsonRpcProvider(opts.rpcUrl);
+      // ethers.js shares identical requests made within 250 ms. For the nonce of the account
+      // this returns a stale value when two writes are close in time ("nonce too low"), so the
+      // cache is disabled.
+      const provider = new JsonRpcProvider(opts.rpcUrl, undefined, { cacheTimeout: -1 });
       const wallet = new Wallet(opts.privateKey, provider);
       this.provider = provider as unknown as ProviderLike;
       this.contract = new Contract(this.contractAddress, RECORD_STORE_ABI, wallet) as unknown as RecordStoreLike;
@@ -127,6 +132,12 @@ export class EvmAdapter implements ChainAdapter {
   }
 
   async store(id: string, payload: string): Promise<TxRef> {
+    const run = this.writeQueue.then(() => this.storeNow(id, payload));
+    this.writeQueue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async storeNow(id: string, payload: string): Promise<TxRef> {
     const size = payloadSize(payload);
     if (size > this.opts.maxPayloadBytes) throw new PayloadTooLargeError(size, this.opts.maxPayloadBytes);
     await this.checkNetwork();
@@ -163,6 +174,9 @@ export class EvmAdapter implements ChainAdapter {
     }
 
     if (ref) {
+      if (ref.chainId !== undefined && ref.chainId !== this.opts.chainId) {
+        throw new IntegrityError(`Reference points to chain ${ref.chainId}, not to chain ${this.opts.chainId}`);
+      }
       if (ref.contractAddress && getAddress(ref.contractAddress) !== this.contractAddress) {
         throw new IntegrityError(`Reference points to contract ${ref.contractAddress}, not to the API contract (SR8)`);
       }

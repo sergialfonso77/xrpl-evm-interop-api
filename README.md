@@ -4,7 +4,7 @@ Prototype of the UOC Master's thesis *Blockchain Network Interoperability: The C
 It offers a common REST interface to store, retrieve and verify data on the XRP Ledger and on an EVM chain (XRPL EVM),
 including a cross-chain operation that stores a record on the EVM chain and anchors its SHA-256 hash on the XRP Ledger.
 
-> Status: PAC3 in progress. T3.1 (environment set-up) and T3.2 (XRP Ledger adapter) done; T3.3 (EVM adapter) in testing; the routes are added in T3.4.
+> Status: PAC3 in progress. T3.1–T3.3 done (environment, XRP Ledger adapter, EVM adapter and contract); T3.4 (REST API and cross-chain operation) in testing.
 
 ## Requirements
 
@@ -72,8 +72,35 @@ Notes on the local networks:
 ## Run
 
 ```bash
-npm run dev      # development
+npm run dev      # starts the API (it needs EVM_CONTRACT_ADDRESS); prints the public addresses of the API (SR12)
 npm test         # unit tests
+```
+
+The interface is described in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1). Summary:
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/status` | Status of the API and of each chain, warnings of low balance and pending anchors (public) |
+| POST | `/records` | `{"chain": "xrpl" \| "evm", "payload": "..."}` stores a record on one chain |
+| GET | `/records/:chain/:id` | Reads a record |
+| POST | `/records/cross-chain` | `{"payload": "..."}` stores on the EVM chain and anchors the SHA-256 hash on the XRP Ledger (201, or 202 if the anchor is pending) |
+| GET | `/records/cross-chain/:id` | Record, state and references on both chains |
+| GET | `/records/cross-chain/:id/verify` | Compares the record with its anchor |
+
+Every request to `/records` needs `X-API-Key`. Write requests also need `X-Timestamp` (Unix seconds) and a
+unique `X-Nonce` (16–128 characters), and are limited per key and minute.
+
+With the API running, `npm run api:smoke` calls every route and prints the hash of the anchor transaction.
+
+## Independent verification (SR5)
+
+`scripts/verify.ts` checks a cross-chain record without the API, using only public nodes and the published
+addresses of the API:
+
+```bash
+XRPL_WS_URL=wss://s.altnet.rippletest.net:51233 EVM_RPC_URL=https://rpc.testnet.xrplevm.org/ \
+API_XRPL_ACCOUNT=<XRP Ledger account of the API> API_EVM_CONTRACT=<RecordStore address> \
+npm run verify -- <hash of the anchor transaction>
 ```
 
 ## Security notes

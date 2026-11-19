@@ -28,5 +28,8 @@ export function openDb(path: string): Database.Database {
       PRIMARY KEY (api_key_hash, nonce)
     );
   `);
+  // Column added in T3.4: last error of an operation (for example, why an anchor is pending).
+  const columns = db.prepare("PRAGMA table_info(records)").all() as Array<{ name: string }>;
+  if (!columns.some((c) => c.name === "last_error")) db.exec("ALTER TABLE records ADD COLUMN last_error TEXT");
   return db;
 }

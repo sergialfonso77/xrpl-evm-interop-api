@@ -16,7 +16,9 @@
     "test": "vitest run",
     "xrpl:setup": "tsx scripts/xrpl-setup.ts",
     "xrpl:smoke": "tsx scripts/xrpl-smoke.ts",
-    "evm:smoke": "tsx scripts/evm-smoke.ts"
+    "evm:smoke": "tsx scripts/evm-smoke.ts",
+    "verify": "tsx scripts/verify.ts",
+    "api:smoke": "tsx scripts/api-smoke.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",

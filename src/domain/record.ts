@@ -28,4 +28,6 @@ export type OperationState =
   | "final_on_evm"
   | "anchored"
   | "completed"
-  | "pending_anchor";
+  | "pending_anchor"
+  /** The record could not be stored on the EVM chain, so nothing was written on-chain. */
+  | "failed";

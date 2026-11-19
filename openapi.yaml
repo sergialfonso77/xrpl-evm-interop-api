@@ -1,0 +1,199 @@
+openapi: 3.1.0
+info:
+  title: TFM Interoperability API
+  version: 0.3.0
+  summary: Common REST interface to store, retrieve and verify data on the XRP Ledger and the XRPL EVM.
+  description: |
+    Prototype of the UOC Master's thesis "Blockchain Network Interoperability".
+    Every request to /records needs an API key (SR1). Write requests (POST) also need a
+    timestamp and a nonce against replay (SR4) and are rate limited (SR13).
+    Payloads are UTF-8 text and are hashed with SHA-256 exactly as received.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: http://127.0.0.1:3000
+security:
+  - apiKey: []
+paths:
+  /status:
+    get:
+      summary: Status of the API and of each chain (FR7)
+      operationId: getStatus
+      security: []
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [api, chains, allChainsConnected, warnings]
+                properties:
+                  api: { type: string, const: ok }
+                  chains: { type: array, items: { $ref: "#/components/schemas/ChainStatus" } }
+                  allChainsConnected: { type: boolean }
+                  warnings: { type: array, items: { type: string }, description: "Low balances (SR13) and pending anchors" }
+  /records:
+    post:
+      summary: Store a record on one chain (FR1, FR2, FR4)
+      operationId: storeRecord
+      parameters:
+        - $ref: "#/components/parameters/Timestamp"
+        - $ref: "#/components/parameters/Nonce"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [chain, payload]
+              properties:
+                chain: { $ref: "#/components/schemas/Chain" }
+                payload: { type: string, minLength: 1, description: "At most 512 bytes on xrpl and 4096 bytes on evm (SR2)" }
+      responses:
+        "201": { description: Stored, content: { application/json: { schema: { $ref: "#/components/schemas/Record" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /records/{chain}/{id}:
+    get:
+      summary: Read a record from one chain (FR3)
+      operationId: getRecord
+      parameters:
+        - { name: chain, in: path, required: true, schema: { $ref: "#/components/schemas/Chain" } }
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Record, content: { application/json: { schema: { $ref: "#/components/schemas/Record" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /records/cross-chain:
+    post:
+      summary: Store a record on the EVM chain and anchor its hash on the XRP Ledger (FR5)
+      operationId: storeCrossChain
+      parameters:
+        - $ref: "#/components/parameters/Timestamp"
+        - $ref: "#/components/parameters/Nonce"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [payload]
+              properties:
+                payload: { type: string, minLength: 1, description: "At most 4096 bytes (SR2)" }
+      responses:
+        "201": { description: Stored and anchored, content: { application/json: { schema: { $ref: "#/components/schemas/CrossChainRecord" } } } }
+        "202": { description: "Stored on the EVM chain; the anchor is pending and will be retried", content: { application/json: { schema: { $ref: "#/components/schemas/CrossChainRecord" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /records/cross-chain/{id}:
+    get:
+      summary: Read a cross-chain record with its state and references
+      operationId: getCrossChain
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Record, content: { application/json: { schema: { $ref: "#/components/schemas/CrossChainRecord" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /records/cross-chain/{id}/verify:
+    get:
+      summary: Verify a cross-chain record against its anchor (FR6)
+      operationId: verifyCrossChain
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Result of the verification
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, valid, anchoredHash, anchor, evm]
+                properties:
+                  id: { type: string, format: uuid }
+                  valid: { type: boolean }
+                  reason: { type: string }
+                  storedHash: { $ref: "#/components/schemas/Hash" }
+                  anchoredHash: { $ref: "#/components/schemas/Hash" }
+                  anchor: { $ref: "#/components/schemas/TxRef" }
+                  evm: { $ref: "#/components/schemas/TxRef" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    apiKey: { type: apiKey, in: header, name: X-API-Key }
+  parameters:
+    Timestamp: { name: X-Timestamp, in: header, required: true, description: "Unix time in seconds (SR4)", schema: { type: integer } }
+    Nonce: { name: X-Nonce, in: header, required: true, description: "Unique value per request, 16-128 characters [A-Za-z0-9_-] (SR4)", schema: { type: string, pattern: "^[A-Za-z0-9_-]{16,128}$" } }
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+  responses:
+    Error:
+      description: "Error: 400 invalid input, 401 missing or invalid credentials or old timestamp, 404 not found, 409 repeated nonce, 413 payload too large, 429 too many requests, 502 integrity error, 503 chain not available"
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message]
+                properties: { code: { type: string }, message: { type: string } }
+  schemas:
+    Chain: { type: string, enum: [xrpl, evm] }
+    Hash: { type: string, pattern: "^[0-9a-f]{64}$", description: SHA-256 of the payload in hexadecimal }
+    TxRef:
+      type: object
+      required: [chain, txHash, position]
+      properties:
+        chain: { $ref: "#/components/schemas/Chain" }
+        txHash: { type: string }
+        position: { type: integer, description: Ledger index (XRP Ledger) or block number (EVM) }
+        chainId: { type: integer }
+        contractAddress: { type: string }
+    Record:
+      type: object
+      required: [id, chain, contentHash]
+      properties:
+        id: { type: string, format: uuid }
+        chain: { $ref: "#/components/schemas/Chain" }
+        payload: { type: string }
+        contentHash: { $ref: "#/components/schemas/Hash" }
+        ref: { $ref: "#/components/schemas/TxRef" }
+    CrossChainRecord:
+      type: object
+      required: [id, chain, contentHash, state, refs]
+      properties:
+        id: { type: string, format: uuid }
+        chain: { type: string, const: cross-chain }
+        payload: { type: string }
+        contentHash: { $ref: "#/components/schemas/Hash" }
+        state: { type: string, enum: [received, stored_on_evm, final_on_evm, anchored, completed, pending_anchor, failed] }
+        refs: { type: array, items: { $ref: "#/components/schemas/TxRef" } }
+        lastError: { type: string }
+    ChainStatus:
+      type: object
+      required: [chain, connected]
+      properties:
+        chain: { $ref: "#/components/schemas/Chain" }
+        connected: { type: boolean }
+        latest: { type: integer }
+        balance: { type: string, description: Balance of the API account in XRP }
+        error: { type: string }

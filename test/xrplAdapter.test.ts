@@ -77,6 +77,20 @@ describe("XrplAdapter", () => {
     expect(await adapter.get("id-9")).toBeNull();
   });
 
+  it("finds the anchor of a record written by the API account, and only that one (SR11, SR12)", async () => {
+    const { client, txs } = fakeClient();
+    const adapter = new XrplAdapter(baseOpts, client);
+    const { encodeAnchorMemo, encodeRecordMemo } = await import("../src/adapters/xrplMemo.js");
+    const data = { hash: "c".repeat(64), id: "id-7", evmChainId: 1449000, contract: "0x6fBc2efeb952602f8447640d27Ec145c8Bb83701", evmTx: "0x" + "d".repeat(64) };
+    txs.set("F1", { hash: "F1", Account: dest.classicAddress, Memos: [encodeAnchorMemo({ ...data, hash: "e".repeat(64) })], ledger_index: 11 });
+    txs.set("R1", { hash: "R1", Account: api.classicAddress, Memos: [encodeRecordMemo("id-7", "not an anchor")], ledger_index: 12 });
+    txs.set("A1", { hash: "A1", Account: api.classicAddress, Memos: [encodeAnchorMemo(data)], ledger_index: 13 });
+    const found = await adapter.getAnchor("id-7");
+    expect(found?.data.hash).toBe(data.hash);
+    expect(found?.ref.txHash).toBe("A1");
+    expect(await adapter.getAnchor("other")).toBeNull();
+  });
+
   it("reports the status and the balance of the API account", async () => {
     const { client } = fakeClient();
     const s = await new XrplAdapter(baseOpts, client).status();

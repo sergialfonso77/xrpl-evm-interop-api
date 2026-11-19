@@ -12,6 +12,11 @@ const schema = z.object({
   REQUEST_MAX_AGE_SECONDS: z.coerce.number().int().positive().default(300),
   // Write requests allowed per client and minute (SR13).
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(30),
+  // Balances under which the status reports a warning, in XRP (SR13).
+  XRPL_LOW_BALANCE: z.coerce.number().nonnegative().default(20),
+  EVM_LOW_BALANCE: z.coerce.number().nonnegative().default(1),
+  // Interval between retries of the pending anchors, in seconds (Section 3.2.4).
+  ANCHOR_RETRY_SECONDS: z.coerce.number().int().positive().default(60),
   // Size limits of the payload in bytes (SR2).
   MAX_XRPL_PAYLOAD_BYTES: z.coerce.number().int().positive().default(512),
   MAX_EVM_PAYLOAD_BYTES: z.coerce.number().int().positive().default(4096),

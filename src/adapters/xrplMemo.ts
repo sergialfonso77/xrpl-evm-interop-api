@@ -51,3 +51,49 @@ export function decodeRecordMemo(memo: XrplMemo): RecordMemoData | null {
     return null;
   }
 }
+
+/**
+ * Data of an anchor (FR5, SR11): everything needed to find and verify the record on the
+ * EVM chain without the API. The hash is the SHA-256 of the payload, in hexadecimal.
+ */
+export interface AnchorMemoData {
+  v: 1;
+  alg: "sha256";
+  hash: string;
+  id: string;
+  evmChainId: number;
+  contract: string;
+  evmTx: string;
+}
+
+/** Builds the memo of an anchor (FR5). */
+export function encodeAnchorMemo(data: Omit<AnchorMemoData, "v" | "alg">): XrplMemo {
+  const full: AnchorMemoData = { v: 1, alg: "sha256", ...data };
+  return {
+    Memo: {
+      MemoType: convertStringToHex(MEMO_TYPE_ANCHOR),
+      MemoFormat: convertStringToHex(MEMO_FORMAT_JSON),
+      MemoData: convertStringToHex(JSON.stringify(full)),
+    },
+  };
+}
+
+/** Decodes an anchor memo, or returns null if the memo is not a valid anchor of this API. */
+export function decodeAnchorMemo(memo: XrplMemo): AnchorMemoData | null {
+  const m = memo.Memo;
+  if (!m.MemoType || !m.MemoData) return null;
+  if (convertHexToString(m.MemoType) !== MEMO_TYPE_ANCHOR) return null;
+  try {
+    const d = JSON.parse(convertHexToString(m.MemoData)) as Partial<AnchorMemoData>;
+    if (
+      d.v !== 1 || d.alg !== "sha256" || typeof d.hash !== "string" || !/^[0-9a-f]{64}$/.test(d.hash) ||
+      typeof d.id !== "string" || typeof d.evmChainId !== "number" || typeof d.contract !== "string" ||
+      typeof d.evmTx !== "string"
+    ) {
+      return null;
+    }
+    return { v: 1, alg: "sha256", hash: d.hash, id: d.id, evmChainId: d.evmChainId, contract: d.contract, evmTx: d.evmTx };
+  } catch {
+    return null;
+  }
+}

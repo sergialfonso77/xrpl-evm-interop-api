@@ -2,7 +2,16 @@ import { Client, Wallet, decodeSeed, dropsToXrp, type ECDSA, type Payment, type 
 import type { ChainAdapter, ChainStatus } from "./chain.js";
 import type { TxRef } from "../domain/record.js";
 import { payloadSize } from "../domain/hash.js";
-import { XRPL_MEMOS_MAX_BYTES, decodeRecordMemo, encodeRecordMemo, memoSizeBytes, type XrplMemo } from "./xrplMemo.js";
+import {
+  XRPL_MEMOS_MAX_BYTES,
+  decodeAnchorMemo,
+  decodeRecordMemo,
+  encodeAnchorMemo,
+  encodeRecordMemo,
+  memoSizeBytes,
+  type AnchorMemoData,
+  type XrplMemo,
+} from "./xrplMemo.js";
 
 export interface XrplAdapterOptions {
   wsUrl: string;
@@ -118,11 +127,35 @@ export class XrplAdapter implements ChainAdapter {
    * which shows that records can be found without the local store.
    */
   async get(id: string, ref?: TxRef): Promise<{ payload: string; ref?: TxRef } | null> {
+    const found = await this.findMemo(id, ref, (memo) => {
+      const d = decodeRecordMemo(memo);
+      return d && d.id === id ? d.payload : null;
+    });
+    return found ? { payload: found.data, ref: found.ref } : null;
+  }
+
+  /** Writes the anchor of a cross-chain record (FR5, SR11) and waits until it is validated (SR9). */
+  async anchor(data: Omit<AnchorMemoData, "v" | "alg">): Promise<TxRef> {
+    return this.submitMemo(encodeAnchorMemo(data));
+  }
+
+  /**
+   * Finds the anchor of a record, written by the API account (SR12). Used to verify a record
+   * and, before retrying a pending anchor, to avoid anchoring the same record twice.
+   */
+  async getAnchor(id: string, ref?: TxRef): Promise<{ data: AnchorMemoData; ref: TxRef } | null> {
+    return this.findMemo(id, ref, (memo) => {
+      const d = decodeAnchorMemo(memo);
+      return d && d.id === id ? d : null;
+    });
+  }
+
+  /** Finds a memo of the API account, by transaction hash or by searching the account history. */
+  private async findMemo<T>(id: string, ref: TxRef | undefined, decode: (memo: XrplMemo) => T | null): Promise<{ data: T; ref: TxRef } | null> {
     await this.connect();
     if (ref?.txHash) {
       const res = await this.client.request({ command: "tx", transaction: ref.txHash });
-      const found = this.extractRecord(res.result as never, id);
-      return found;
+      return this.extractMemo(res.result as never, decode);
     }
     let marker: unknown = undefined;
     const maxPages = this.opts.maxHistoryPages ?? 10;
@@ -135,7 +168,7 @@ export class XrplAdapter implements ChainAdapter {
       } as never);
       const r = res.result as { transactions: Array<Record<string, unknown>>; marker?: unknown };
       for (const entry of r.transactions) {
-        const found = this.extractRecord(entry as never, id);
+        const found = this.extractMemo(entry as never, decode);
         if (found) return found;
       }
       if (!r.marker) break;
@@ -144,19 +177,19 @@ export class XrplAdapter implements ChainAdapter {
     return null;
   }
 
-  /** Extracts a record from a transaction, checking that it was sent by the API account (SR12). */
-  private extractRecord(entry: Record<string, unknown>, id: string): { payload: string; ref: TxRef } | null {
+  /** Extracts a memo from a validated transaction, checking that it was sent by the API account (SR12). */
+  private extractMemo<T>(entry: Record<string, unknown>, decode: (memo: XrplMemo) => T | null): { data: T; ref: TxRef } | null {
     // Depending on the API version, the transaction fields are at the top level, in "tx" or in "tx_json".
-    const tx = ((entry.tx_json ?? entry.tx ?? entry) as Record<string, unknown>);
+    const tx = (entry.tx_json ?? entry.tx ?? entry) as Record<string, unknown>;
     const hash = (entry.hash ?? tx.hash) as string | undefined;
     const validated = entry.validated as boolean | undefined;
     if (tx.Account !== this.wallet.classicAddress || validated === false) return null;
     const memos = (tx.Memos as XrplMemo[] | undefined) ?? [];
     for (const memo of memos) {
-      const data = decodeRecordMemo(memo);
-      if (data && data.id === id) {
+      const data = decode(memo);
+      if (data !== null) {
         const position = Number(entry.ledger_index ?? tx.ledger_index ?? 0);
-        return { payload: data.payload, ref: { chain: "xrpl", txHash: hash ?? "", position } };
+        return { data, ref: { chain: "xrpl", txHash: hash ?? "", position } };
       }
     }
     return null;
