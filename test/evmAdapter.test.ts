@@ -15,7 +15,7 @@ function eventLog(address: string, id: string, payload: string) {
 }
 
 /** Fake chain: a contract that keeps records in memory and a provider that returns its receipts and logs. */
-function fakeChain(opts: { chainId?: bigint; status?: number; eventFrom?: string; tamper?: boolean } = {}) {
+function fakeChain(opts: { chainId?: bigint; status?: number; eventFrom?: string; tamper?: boolean; noContract?: boolean } = {}) {
   const records = new Map<string, string>();
   const receipts = new Map<string, ReceiptLike>();
   let block = 100;
@@ -49,6 +49,7 @@ function fakeChain(opts: { chainId?: bigint; status?: number; eventFrom?: string
   const provider: ProviderLike = {
     getNetwork: async () => ({ chainId: opts.chainId ?? 31337n }),
     getBlockNumber: async () => block,
+    getCode: async (a) => (opts.noContract || a.toLowerCase() !== CONTRACT.toLowerCase() ? "0x" : "0x6080"),
     getBalance: async () => 5n * 10n ** 18n,
     getTransactionReceipt: async (h) => receipts.get(h) ?? null,
     getLogs: async (f) =>
@@ -83,6 +84,13 @@ describe("EvmAdapter", () => {
     const chain = fakeChain({ chainId: 1n });
     chain.track("a");
     await expect(adapterWith(chain).store("a", "{}")).rejects.toThrow(/chain 1/);
+  });
+
+  it("refuses to work when there is no contract at the configured address", async () => {
+    const chain = fakeChain({ noContract: true });
+    chain.track("a");
+    await expect(adapterWith(chain).store("a", "{}")).rejects.toThrow(/no contract/);
+    expect((await adapterWith(fakeChain({ noContract: true })).status()).connected).toBe(false);
   });
 
   it("stores a record and returns the reference of the transaction (SR9)", async () => {

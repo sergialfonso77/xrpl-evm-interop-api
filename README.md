@@ -4,7 +4,7 @@ Prototype of the UOC Master's thesis *Blockchain Network Interoperability: The C
 It offers a common REST interface to store, retrieve and verify data on the XRP Ledger and on an EVM chain (XRPL EVM),
 including a cross-chain operation that stores a record on the EVM chain and anchors its SHA-256 hash on the XRP Ledger.
 
-> Status: PAC3 in progress. T3.1–T3.3 done (environment, XRP Ledger adapter, EVM adapter and contract); T3.4 (REST API and cross-chain operation) in testing.
+> Status: PAC3 in progress. T3.1–T3.4 done (environment, adapters, contract, REST API and cross-chain operation); T3.5 (tests and measurements) in progress.
 
 ## Requirements
 
@@ -74,6 +74,33 @@ Notes on the local networks:
 ```bash
 npm run dev      # starts the API (it needs EVM_CONTRACT_ADDRESS); prints the public addresses of the API (SR12)
 npm test         # unit tests
+npm run coverage # unit tests with a coverage report (coverage/index.html)
+```
+
+With Docker, the API can also run in a container (the contract must be deployed and `.env` filled in first):
+
+```bash
+docker compose --profile api up -d --build       # local networks + API, on http://127.0.0.1:3000
+docker compose --profile testnet up -d --build   # only the API, with .env.testnet (public test networks)
+docker compose --profile api up -d --force-recreate --no-deps api   # restart only the API after changing .env
+```
+
+Notes:
+
+- Use only one Docker engine. If Docker Desktop and OrbStack run at the same time, one of them can take the
+  ports of the computer while the other one runs the containers, and the scripts on the computer and the API
+  in the container end up talking to different nodes. Check that both see the same block:
+  `curl -s -X POST 127.0.0.1:8545 -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}'`.
+- Anvil and rippled in stand-alone mode keep their state in memory: when their containers restart, the
+  accounts and the contract disappear. Run `npm run xrpl:setup` and deploy the contract again, and update `.env`.
+- Use `--no-deps` when recreating the API, so that the networks are not recreated too.
+
+## Measurements and evidence
+
+```bash
+# With the API running with a high rate limit (RATE_LIMIT_PER_MINUTE=1000):
+npm run measure -- 10 local          # 10 executions of each operation, directly and through the API
+DOTENV_CONFIG_PATH=.env.testnet npm run save-evidence   # copy of the XRPL Testnet activity of the API account
 ```
 
 The interface is described in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1). Summary:

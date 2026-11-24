@@ -35,6 +35,7 @@ export interface ReceiptLike {
 export interface ProviderLike {
   getNetwork(): Promise<{ chainId: bigint }>;
   getBlockNumber(): Promise<number>;
+  getCode(address: string): Promise<string>;
   getBalance(address: string): Promise<bigint>;
   getTransactionReceipt(hash: string): Promise<ReceiptLike | null>;
   getLogs(filter: { address: string; topics: Array<string | null>; fromBlock: number; toBlock: number | "latest" }): Promise<
@@ -127,6 +128,12 @@ export class EvmAdapter implements ChainAdapter {
     const { chainId } = await this.provider.getNetwork();
     if (Number(chainId) !== this.opts.chainId) {
       throw new Error(`The node is on chain ${chainId}, but the configuration expects chain ${this.opts.chainId}`);
+    }
+    // A transaction to an address without code succeeds without doing anything, so the
+    // address of the contract is checked too (for example, after a local chain is restarted).
+    const code = await this.provider.getCode(this.contractAddress);
+    if (!code || code === "0x") {
+      throw new Error(`There is no contract at ${this.contractAddress} on chain ${chainId}: deploy RecordStore and update EVM_CONTRACT_ADDRESS`);
     }
     this.networkChecked = true;
   }

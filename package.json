@@ -18,7 +18,10 @@
     "xrpl:smoke": "tsx scripts/xrpl-smoke.ts",
     "evm:smoke": "tsx scripts/evm-smoke.ts",
     "verify": "tsx scripts/verify.ts",
-    "api:smoke": "tsx scripts/api-smoke.ts"
+    "api:smoke": "tsx scripts/api-smoke.ts",
+    "measure": "tsx scripts/measure.ts",
+    "save-evidence": "tsx scripts/save-evidence.ts",
+    "coverage": "vitest run --coverage"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
@@ -33,6 +36,7 @@
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.2",
     "@types/supertest": "^6.0.2",
+    "@vitest/coverage-v8": "^5.1.0",
     "supertest": "^7.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

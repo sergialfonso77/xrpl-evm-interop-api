@@ -1,4 +1,4 @@
-# Local development networks (LR2: no real funds).
+# Local development networks (LR2: no real funds) and, optionally, the API (NFR3).
 # rippled runs in stand-alone mode: ledgers only close when ledger_accept is called.
 services:
   rippled:
@@ -18,3 +18,38 @@ services:
     command: ["anvil"]
     ports:
       - "127.0.0.1:8545:8545"
+
+  # The API, with the local networks: docker compose --profile api up -d --build
+  # It reads .env, but connects to the networks by their service names.
+  # The contract must be deployed first and its address written in .env (see README).
+  api:
+    profiles: ["api"]
+    build: .
+    env_file: .env
+    environment:
+      XRPL_WS_URL: "ws://rippled:6006"
+      EVM_RPC_URL: "http://anvil:8545"
+      DB_PATH: "/data/api.sqlite"
+    volumes:
+      - api-data:/data
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - rippled
+      - anvil
+
+  # The API with the public test networks: docker compose --profile testnet up -d --build
+  api-testnet:
+    profiles: ["testnet"]
+    build: .
+    env_file: .env.testnet
+    environment:
+      DB_PATH: "/data/api-testnet.sqlite"
+    volumes:
+      - api-testnet-data:/data
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  api-data:
+  api-testnet-data:
