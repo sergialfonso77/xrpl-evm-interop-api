@@ -21,7 +21,8 @@
     "api:smoke": "tsx scripts/api-smoke.ts",
     "measure": "tsx scripts/measure.ts",
     "save-evidence": "tsx scripts/save-evidence.ts",
-    "coverage": "vitest run --coverage"
+    "coverage": "vitest run --coverage",
+    "xrpl:refund": "tsx scripts/xrpl-refund.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
