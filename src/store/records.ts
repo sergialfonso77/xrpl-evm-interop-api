@@ -51,6 +51,20 @@ export class RecordRepository {
     };
   }
 
+  /**
+   * Cross-chain operations that stopped in an intermediate state, for example because the API
+   * was stopped in the middle of an operation. Only operations without changes for some minutes
+   * are returned, so that an operation still in progress is not taken.
+   */
+  interrupted(minutes: number): RecordRow[] {
+    const rows = this.db
+      .prepare(
+        "SELECT id FROM records WHERE chain = 'cross-chain' AND state IN ('received', 'stored_on_evm', 'final_on_evm', 'anchored') AND updated_at < datetime('now', ?) ORDER BY created_at",
+      )
+      .all(`-${minutes} minutes`) as Array<{ id: string }>;
+    return rows.map((r) => this.get(r.id)!);
+  }
+
   /** Cross-chain records whose anchor is still pending, oldest first. */
   pendingAnchors(): RecordRow[] {
     const rows = this.db.prepare("SELECT id FROM records WHERE state = 'pending_anchor' ORDER BY created_at").all() as Array<{ id: string }>;

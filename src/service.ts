@@ -56,6 +56,8 @@ export interface VerifyResult {
 export interface ServiceOptions {
   /** Balances below these values produce a warning in the status (SR13), in XRP. */
   lowBalance: { xrpl: number; evm: number };
+  /** Minutes without changes after which an operation in an intermediate state is resumed (default 10). */
+  interruptedAfterMinutes?: number;
 }
 
 /**
@@ -146,6 +148,7 @@ export class RecordService {
     this.retrying = true;
     let done = 0;
     try {
+      await this.resumeInterrupted();
       for (const row of this.repo.pendingAnchors()) {
         const evmRef = row.refs.find((r) => r.chain === "evm");
         if (!evmRef) continue;
@@ -168,6 +171,40 @@ export class RecordService {
       this.retrying = false;
     }
     return done;
+  }
+
+  /**
+   * Resumes the operations that stopped in an intermediate state (for example, if the API was
+   * stopped in the middle of one). If the record is on the EVM chain, its anchor becomes pending
+   * and is written by the normal retry; if it is not, nothing was written and the operation fails.
+   */
+  private async resumeInterrupted(): Promise<void> {
+    for (const row of this.repo.interrupted(this.opts.interruptedAfterMinutes ?? 10)) {
+      try {
+        if (row.state === "anchored") {
+          this.repo.update(row.id, { state: "completed" });
+          continue;
+        }
+        let evmRef = row.refs.find((r) => r.chain === "evm");
+        if (!evmRef) {
+          const found = await this.evm.get(row.id);
+          if (!found) {
+            this.repo.update(row.id, { state: "failed", lastError: "Interrupted before the record was stored on the EVM chain" });
+            continue;
+          }
+          if (!found.ref || sha256Hex(found.payload) !== row.contentHash) {
+            this.repo.update(row.id, { state: "failed", lastError: "Interrupted; the record on the EVM chain could not be checked" });
+            continue;
+          }
+          evmRef = found.ref;
+          this.repo.update(row.id, { state: "final_on_evm", addRef: evmRef });
+        }
+        this.repo.update(row.id, { state: "pending_anchor", lastError: "Interrupted before the anchor was written" });
+      } catch (e) {
+        // The chain is not available: the operation is resumed in the next round.
+        this.repo.update(row.id, { state: row.state, lastError: e instanceof Error ? e.message : String(e) });
+      }
+    }
   }
 
   /** Reads a cross-chain record, with its state and the references on both chains. */

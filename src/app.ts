@@ -15,7 +15,8 @@ export interface AppDeps {
 const storeBody = z.object({ chain: z.enum(["xrpl", "evm"]), payload: z.string().min(1) }).strict();
 const crossBody = z.object({ payload: z.string().min(1) }).strict();
 const chainParam = z.enum(["xrpl", "evm"]);
-const idParam = z.string().uuid();
+// Identifiers are UUIDs; they are compared in lower case, as the API generates them.
+const idParam = z.string().uuid().transform((s) => s.toLowerCase());
 
 /** Wraps an async route so that its errors reach the error handler. */
 const route = (fn: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response, next: NextFunction) => fn(req, res).catch(next);
@@ -26,7 +27,6 @@ export function createApp(deps: AppDeps): Express {
   const { authenticate, protectWrite } = createSecurity(deps.db, deps.security);
   const app = express();
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "16kb" }));
 
   // FR7: public status of the API and of each chain.
   app.get(
@@ -37,7 +37,10 @@ export function createApp(deps: AppDeps): Express {
     }),
   );
 
+  // The API key is checked before the body is read, so that requests without credentials are
+  // always answered with 401 and their body is never parsed (SR1).
   app.use("/records", authenticate);
+  app.use(express.json({ limit: "16kb" }));
 
   // The cross-chain routes are declared first, so that "cross-chain" is not taken as a chain name.
   app.post(
@@ -88,6 +91,9 @@ export function createApp(deps: AppDeps): Express {
       res.status(200).json(await service.get(chain.data, id.data));
     }),
   );
+
+  // Unknown routes also answer with the common JSON format.
+  app.use((_req: Request, res: Response) => sendError(res, 404, "not_found", "Unknown route"));
 
   // Errors of the body parser and of the service, with the codes of the interface.
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

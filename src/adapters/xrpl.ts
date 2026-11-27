@@ -40,8 +40,8 @@ export function walletFromSeed(seed: string): Wallet {
 }
 
 export class PayloadTooLargeError extends Error {
-  constructor(size: number, max: number) {
-    super(`Payload of ${size} bytes exceeds the limit of ${max} bytes`);
+  constructor(size: number, max: number, message?: string) {
+    super(message ?? `Payload of ${size} bytes exceeds the limit of ${max} bytes`);
     this.name = "PayloadTooLargeError";
   }
 }
@@ -54,6 +54,11 @@ export class XrplAdapter implements ChainAdapter {
   readonly name = "xrpl" as const;
   private readonly client: Client;
   private readonly wallet: Wallet;
+  /**
+   * Transactions are sent one after another: each one takes the next sequence number of the
+   * account, so two transactions prepared at the same time would get the same one.
+   */
+  private writeQueue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly opts: XrplAdapterOptions, client?: Client) {
     this.client = client ?? new Client(opts.wsUrl);
@@ -77,6 +82,15 @@ export class XrplAdapter implements ChainAdapter {
     const size = payloadSize(payload);
     if (size > this.opts.maxPayloadBytes) throw new PayloadTooLargeError(size, this.opts.maxPayloadBytes);
     const memo = encodeRecordMemo(id, payload);
+    // The payload is written inside a JSON text, where some characters (quotes, backslashes,
+    // control characters) take more than one byte, so the encoded memo is checked too.
+    if (memoSizeBytes(memo) > XRPL_MEMOS_MAX_BYTES) {
+      throw new PayloadTooLargeError(
+        size,
+        this.opts.maxPayloadBytes,
+        `Payload of ${size} bytes takes ${memoSizeBytes(memo)} bytes once encoded in the memo, over the limit of ${XRPL_MEMOS_MAX_BYTES} bytes of the Memos field (characters such as quotes count twice)`,
+      );
+    }
     return this.submitMemo(memo);
   }
 
@@ -85,6 +99,12 @@ export class XrplAdapter implements ChainAdapter {
    * validated ledger with result tesSUCCESS (SR9). Also used for anchors in T3.4.
    */
   async submitMemo(memo: XrplMemo): Promise<TxRef> {
+    const run = this.writeQueue.then(() => this.submitMemoNow(memo));
+    this.writeQueue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async submitMemoNow(memo: XrplMemo): Promise<TxRef> {
     if (memoSizeBytes(memo) > XRPL_MEMOS_MAX_BYTES) {
       throw new PayloadTooLargeError(memoSizeBytes(memo), XRPL_MEMOS_MAX_BYTES);
     }
@@ -182,8 +202,10 @@ export class XrplAdapter implements ChainAdapter {
     // Depending on the API version, the transaction fields are at the top level, in "tx" or in "tx_json".
     const tx = (entry.tx_json ?? entry.tx ?? entry) as Record<string, unknown>;
     const hash = (entry.hash ?? tx.hash) as string | undefined;
-    const validated = entry.validated as boolean | undefined;
-    if (tx.Account !== this.wallet.classicAddress || validated === false) return null;
+    const meta = (entry.meta ?? entry.metaData) as { TransactionResult?: string } | undefined;
+    // Only transactions of the API account in a validated ledger and with a successful result
+    // count: a failed transaction (tec codes) is also kept in the ledger, but it did nothing.
+    if (tx.Account !== this.wallet.classicAddress || entry.validated !== true || meta?.TransactionResult !== "tesSUCCESS") return null;
     const memos = (tx.Memos as XrplMemo[] | undefined) ?? [];
     for (const memo of memos) {
       const data = decode(memo);

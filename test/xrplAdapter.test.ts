@@ -22,9 +22,22 @@ function fakeClient(opts: { result?: string } = {}) {
           ledger++;
           return { result: {} };
         case "tx":
-          return { result: txs.get(req.transaction as string) ?? { validated: false } };
+          {
+            const t = txs.get(req.transaction as string);
+            return { result: t ? { ...t, validated: true, meta: t.meta ?? { TransactionResult: "tesSUCCESS" } } : { validated: false } };
+          }
         case "account_tx":
-          return { result: { transactions: [...txs.values()].map((t) => ({ tx_json: t, hash: t.hash, validated: true, ledger_index: t.ledger_index })) } };
+          return {
+            result: {
+              transactions: [...txs.values()].map((t) => ({
+                tx_json: t,
+                hash: t.hash,
+                validated: true,
+                ledger_index: t.ledger_index,
+                meta: t.meta ?? { TransactionResult: "tesSUCCESS" },
+              })),
+            },
+          };
         case "server_info":
           return { result: { info: { validated_ledger: { seq: ledger } } } };
         case "account_info":
@@ -89,6 +102,38 @@ describe("XrplAdapter", () => {
     expect(found?.data.hash).toBe(data.hash);
     expect(found?.ref.txHash).toBe("A1");
     expect(await adapter.getAnchor("other")).toBeNull();
+  });
+
+  it("ignores a failed transaction of the API account, even if it is in a validated ledger (SR9)", async () => {
+    const { client, txs } = fakeClient();
+    const adapter = new XrplAdapter(baseOpts, client);
+    const { encodeRecordMemo } = await import("../src/adapters/xrplMemo.js");
+    txs.set("F9", { hash: "F9", Account: api.classicAddress, Memos: [encodeRecordMemo("id-5", "data")], ledger_index: 12, meta: { TransactionResult: "tecUNFUNDED_PAYMENT" } });
+    expect(await adapter.get("id-5")).toBeNull();
+    expect(await adapter.get("id-5", { chain: "xrpl", txHash: "F9", position: 12 })).toBeNull();
+  });
+
+  it("rejects a payload that fits in 512 bytes but not once encoded in the memo (SR2)", async () => {
+    const { client } = fakeClient();
+    await expect(new XrplAdapter(baseOpts, client).store("id", '"'.repeat(512))).rejects.toThrow(/once encoded in the memo/);
+  });
+
+  it("sends the transactions one after another (no repeated sequence numbers)", async () => {
+    const { client } = fakeClient();
+    let active = 0;
+    let maxActive = 0;
+    const realSubmit = client.submitAndWait.bind(client);
+    (client as unknown as { submitAndWait: typeof client.submitAndWait }).submitAndWait = (async (...args: Parameters<typeof client.submitAndWait>) => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((r) => setTimeout(r, 5));
+      const res = await realSubmit(...args);
+      active--;
+      return res;
+    }) as typeof client.submitAndWait;
+    const adapter = new XrplAdapter(baseOpts, client);
+    await Promise.all([adapter.store("a", "1"), adapter.store("b", "2"), adapter.store("c", "3")]);
+    expect(maxActive).toBe(1);
   });
 
   it("reports the status and the balance of the API account", async () => {

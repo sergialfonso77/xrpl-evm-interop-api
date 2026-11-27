@@ -66,7 +66,8 @@ Notes on the local networks:
 
 - In stand-alone mode, rippled only closes a ledger when it is asked to:
   `docker compose exec rippled rippled --silent ledger_accept`.
-  The finality checks (SR9) are tested on the public test networks.
+  The finality checks (SR9) can only be observed on the public test networks; they were checked manually with the
+  smoke scripts there, and with simulated chains in the unit tests.
 - Anvil confirms transactions immediately; its first accounts and keys are printed in `docker compose logs anvil`.
 
 ## Run
@@ -130,10 +131,45 @@ API_XRPL_ACCOUNT=<XRP Ledger account of the API> API_EVM_CONTRACT=<RecordStore a
 npm run verify -- <hash of the anchor transaction>
 ```
 
+## Published addresses (SR12)
+
+Records and anchors are only valid if they were written by these addresses. The verification script and the
+API ignore anything written by other accounts or contracts.
+
+| Network | Role | Address |
+|---|---|---|
+| XRPL Testnet | Account of the API (records and anchors) | `rJARKG5rvwjoRQ4SdnLy5fnycvWHcijDTi` |
+| XRPL Testnet | Destination of the 1-drop payments that carry the memos | `rKk5t8q8ZNomWiNQdL25kCgNgXhxdPAfuW` |
+| XRPL EVM Testnet (chain 1449000) | Account of the API (writer of the contract) | `0x93a6C21B2fCAfa4c7b6A80368081E30eD3C9193b` |
+| XRPL EVM Testnet (chain 1449000) | `RecordStore` contract (deployed in block 9557799) | `0x6fBc2efeb952602f8447640d27Ec145c8Bb83701` |
+
+The local networks create new accounts every time they start, so their addresses are not published. The API prints
+its addresses when it starts.
+
+## Key rotation (SR10)
+
+The API uses one key for each chain (`XRPL_SEED` and `EVM_PRIVATE_KEY`), and each account only needs a small
+balance for the fees. If a key is compromised:
+
+- **XRPL EVM.** Create a new key, fund it, and transfer the write permission of the contract to it with the old key:
+  `cast send <contract> "transferWriter(address)" <new address> --private-key <old key> --rpc-url <EVM_RPC_URL>`.
+  Then write the new key in `EVM_PRIVATE_KEY`. The contract and the records do not change; from that moment the old
+  key can no longer write (tested in `contracts/test/RecordStore.t.sol`, `test_TransferWriter`).
+- **XRP Ledger.** The address of the API is what identifies its records and anchors. The XRP Ledger allows the
+  signing key of an account to be replaced (regular key, `SetRegularKey`) while the address stays the same, but the
+  adapter does not support a regular key yet (planned for PAC4). Until then, the alternative is a new account: its
+  address must be published, and the records and anchors of the old address remain valid only up to the date of the
+  change.
+
 ## Security notes
 
-- Secrets are only read from `.env`, which is excluded from Git (SR3).
-- Only test networks are used, without real funds (LR2).
+- Secrets are read from environment variables, normally from `.env` or `.env.testnet`, which are excluded from Git
+  (SR3). They are never written in the code.
+- Only test networks are used, without real funds (LR2). Nothing in the code prevents a configuration for the main
+  networks, so this depends on the operator.
+- Known limitations, to be studied in the threat model (PAC4): the nonce is not signed together with the content of
+  the request; invalid requests also count for the rate limit; error messages can show details of the nodes; the API
+  trusts a single node per chain (SR7) and has no operation log yet (SR6).
 
 ## Licence
 

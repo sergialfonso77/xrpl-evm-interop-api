@@ -16,7 +16,7 @@ function setup(opts: { xrpl?: ReturnType<typeof fakeXrpl>; evm?: ReturnType<type
   const evm = opts.evm ?? fakeEvm();
   const service = new RecordService(xrpl, evm, new RecordRepository(db), { lowBalance: { xrpl: 20, evm: 1 } });
   const app = createApp({ service, db, security: { apiKeys: [KEY], maxAgeSeconds: 300, ratePerMinute: opts.rate ?? 30, now: opts.now } });
-  return { app, service, xrpl, evm };
+  return { app, service, xrpl, evm, db };
 }
 
 /** Headers of a write request (SR1, SR4). */
@@ -49,6 +49,17 @@ describe("authentication and replay protection (SR1, SR4, SR13)", () => {
     const { app } = setup();
     expect((await request(app).get("/records/evm/123e4567-e89b-12d3-a456-426614174000")).status).toBe(401);
     expect((await request(app).post("/records").set(write({ "x-api-key": "wrong" })).send({ chain: "evm", payload: "x" })).status).toBe(401);
+  });
+  it("checks the API key before reading the body", async () => {
+    const { app } = setup();
+    const res = await request(app).post("/records").set({ "content-type": "application/json" }).send("{not json");
+    expect(res.status).toBe(401);
+  });
+  it("answers unknown routes with the common JSON format", async () => {
+    const { app } = setup();
+    const res = await request(app).get("/unknown");
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("not_found");
   });
   it("requires a timestamp and a nonce on writes", async () => {
     const { app } = setup();
@@ -98,6 +109,12 @@ describe("records on one chain (FR1-FR4)", () => {
     const { app } = setup();
     const res = await request(app).post("/records").set(write()).send({ chain: "xrpl", payload: "x".repeat(513) });
     expect(res.status).toBe(413);
+  });
+  it("accepts identifiers in upper case", async () => {
+    const { app } = setup();
+    const created = await request(app).post("/records").set(write()).send({ chain: "evm", payload: "x" });
+    const res = await request(app).get(`/records/evm/${String(created.body.id).toUpperCase()}`).set({ "x-api-key": KEY });
+    expect(res.status).toBe(200);
   });
   it("returns 404 for an unknown record or a record of the other chain", async () => {
     const { app } = setup();
@@ -162,6 +179,37 @@ describe("cross-chain operation (FR5, FR6)", () => {
     expect(xrpl.anchorsWritten).toBe(1);
     const read = await request(app).get(`/records/cross-chain/${res.body.id}`).set({ "x-api-key": KEY });
     expect(read.body.state).toBe("completed");
+  });
+
+  it("resumes the operations interrupted in an intermediate state (for example, by a restart)", async () => {
+    const { service, evm, xrpl, db } = setup();
+    const { RecordRepository } = await import("../src/store/records.js");
+    const repo = new RecordRepository(db);
+    // 1. Stored on the EVM chain, but the API stopped before the anchor.
+    const ref = await evm.store("11111111-1111-4111-8111-111111111111", "a");
+    repo.insert({ id: "11111111-1111-4111-8111-111111111111", chain: "cross-chain", contentHash: sha256Hex("a"), state: "final_on_evm", refs: [ref] });
+    // 2. Stored on the EVM chain, but the API stopped before saving the reference.
+    const ref2 = await evm.store("22222222-2222-4222-8222-222222222222", "b");
+    evm.refs.set("22222222-2222-4222-8222-222222222222", ref2);
+    repo.insert({ id: "22222222-2222-4222-8222-222222222222", chain: "cross-chain", contentHash: sha256Hex("b"), state: "received" });
+    // 3. The API stopped before storing anything.
+    repo.insert({ id: "33333333-3333-4333-8333-333333333333", chain: "cross-chain", contentHash: sha256Hex("c"), state: "received" });
+    db.exec("UPDATE records SET updated_at = datetime('now', '-1 hour')");
+
+    await service.retryPendingAnchors();
+    expect(repo.get("11111111-1111-4111-8111-111111111111")!.state).toBe("completed");
+    expect(repo.get("22222222-2222-4222-8222-222222222222")!.state).toBe("completed");
+    expect(repo.get("33333333-3333-4333-8333-333333333333")!.state).toBe("failed");
+    expect(xrpl.anchorsWritten).toBe(2);
+  });
+
+  it("does not touch an operation that is still in progress", async () => {
+    const { service, db } = setup();
+    const { RecordRepository } = await import("../src/store/records.js");
+    const repo = new RecordRepository(db);
+    repo.insert({ id: "44444444-4444-4444-8444-444444444444", chain: "cross-chain", contentHash: sha256Hex("d"), state: "received" });
+    await service.retryPendingAnchors();
+    expect(repo.get("44444444-4444-4444-8444-444444444444")!.state).toBe("received");
   });
 
   it("marks the operation as failed when the EVM chain is not available", async () => {

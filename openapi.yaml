@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: TFM Interoperability API
-  version: 0.3.0
+  version: 0.4.0
   summary: Common REST interface to store, retrieve and verify data on the XRP Ledger and the XRPL EVM.
   description: |
     Prototype of the UOC Master's thesis "Blockchain Network Interoperability".
@@ -51,7 +51,7 @@ paths:
               required: [chain, payload]
               properties:
                 chain: { $ref: "#/components/schemas/Chain" }
-                payload: { type: string, minLength: 1, description: "At most 512 bytes on xrpl and 4096 bytes on evm (SR2)" }
+                payload: { type: string, minLength: 1, description: "At most 512 bytes on xrpl and 4096 bytes on evm (SR2). On xrpl the payload is also written inside a JSON memo of at most 1024 bytes, where quotes, backslashes and control characters take more space, so some payloads under 512 bytes are rejected with 413." }
       responses:
         "201": { description: Stored, content: { application/json: { schema: { $ref: "#/components/schemas/Record" } } } }
         "400": { $ref: "#/components/responses/Error" }
@@ -59,11 +59,14 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
   /records/{chain}/{id}:
     get:
       summary: Read a record from one chain (FR3)
       operationId: getRecord
+      description: Cross-chain records are read with /records/cross-chain/{id}; here they answer 404.
       parameters:
         - { name: chain, in: path, required: true, schema: { $ref: "#/components/schemas/Chain" } }
         - $ref: "#/components/parameters/Id"
@@ -99,7 +102,9 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
   /records/cross-chain/{id}:
     get:
       summary: Read a cross-chain record with its state and references
@@ -110,7 +115,9 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
   /records/cross-chain/{id}/verify:
     get:
       summary: Verify a cross-chain record against its anchor (FR6)
@@ -145,7 +152,7 @@ components:
     Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
   responses:
     Error:
-      description: "Error: 400 invalid input, 401 missing or invalid credentials or old timestamp, 404 not found, 409 repeated nonce, 413 payload too large, 429 too many requests, 502 integrity error, 503 chain not available"
+      description: "Error: 400 invalid input, 401 missing or invalid credentials or old timestamp, 404 not found or unknown route, 409 repeated nonce, 413 payload too large, 429 too many requests, 500 internal error, 502 integrity error, 503 chain not available"
       content:
         application/json:
           schema:

@@ -12,8 +12,11 @@ const txHash = () => "0x" + randomBytes(32).toString("hex");
 /** Simulated EVM chain: records in memory, optional failures and a way to tamper with a record. */
 export function fakeEvm(opts: { down?: boolean; max?: number; balance?: string } = {}) {
   const records = new Map<string, string>();
+  /** References found by searching the logs, for reads without reference. */
+  const refs = new Map<string, TxRef>();
   let block = 100;
-  const adapter: ChainAdapter & { tamper(id: string, payload: string): void; stores: number } = {
+  const adapter: ChainAdapter & { tamper(id: string, payload: string): void; stores: number; refs: Map<string, TxRef> } = {
+    refs,
     name: "evm",
     stores: 0,
     async store(id: string, payload: string): Promise<TxRef> {
@@ -26,7 +29,7 @@ export function fakeEvm(opts: { down?: boolean; max?: number; balance?: string }
     async get(id: string, ref?: TxRef) {
       if (ref?.contractAddress && ref.contractAddress !== CONTRACT) throw new IntegrityError("Reference points to another contract (SR8)");
       const payload = records.get(id);
-      return payload === undefined ? null : { payload, ref };
+      return payload === undefined ? null : { payload, ref: ref ?? refs.get(id) };
     },
     async status() {
       return { chain: "evm" as const, connected: !opts.down, latest: block, balance: opts.balance ?? "197.6" };
